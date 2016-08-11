@@ -45,7 +45,9 @@ callbacks = {
     'preRepoInit':            [],
     'postRepoInit':           [],
     'preRepoDone':            [],
-    'postRepoDone':           []
+    'postRepoDone':           [],
+    'preSCMCheckout':         [],
+    'postSCMCheckout':        [],
     }
 
 class PluginTracker(object):

@@ -31,6 +31,7 @@ import shutil
 import random
 import time
 import pprint
+import inspect
 
 def scan_mounts(topdir):
     """Search path for mountpoints"""
@@ -116,11 +117,17 @@ class BaseTaskHandler(object):
     to handle each task.
     """
 
+    __metaclass__ = koji.KojiContext
+
     # list of methods the class can handle
     Methods = []
 
     # Options:
     Foreground = False
+    def __new__(cls, *args, **kwargs):
+        inst = super(A, cls).__new__(cls, *args, **kwargs)
+        inst.context = None
+        return inst
 
     def __init__(self, id, method, params, session, options, workdir=None):
         self.id = id   #task id
@@ -366,6 +373,37 @@ class BaseTaskHandler(object):
             repo_info = self.wait(task_id)[task_id]
         return repo_info
 
+    @classmethod
+    def request_keys(cls, method_name='handler', filter=None):
+        try:
+            keys = cls.requestKeys
+        except AttributeError:
+            pass
+        else:
+            return keys
+
+        if filter is None:
+            filter = (lambda name, obj:
+                      inspect.ismethod(obj) and name == method_name)
+        methods = [(name, obj) for name, obj in inspect.getmembers(cls)
+                   if filter(name, obj)]
+        _, method = methods[0]
+        keys, args, kwargs, default_vals = tuple(inspect.getargspec(method))
+        keys = keys + [item for item in args, kwargs if item is not None]
+        return keys[1:]
+
+    def parsed_request(self, request=None, keys=None):
+        if request is None:
+            request = self.session.getTaskRequest(self.id)
+        if keys is None:
+            keys = self.request_keys()
+
+        return zip(keys, request)
+
+    def contextData(self):
+        taskinfo = self.session.getTaskInfo(self.id, request=True)
+        request = self.parsed_request(taskinfo['request'])
+        return taskinfo.update(request)
 
 class FakeTask(BaseTaskHandler):
     Methods = ['someMethod']

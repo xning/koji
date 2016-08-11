@@ -163,6 +163,8 @@ def log_output(session, path, args, outfile, uploadpath, cwd=None, logerror=0, a
 class SCM(object):
     "SCM abstraction class"
 
+    __metaclass__ = koji.KojiContext
+
     types = { 'CVS': ('cvs://',),
               'CVS+SSH': ('cvs+ssh://',),
               'GIT': ('git://', 'git+http://', 'git+https://', 'git+rsync://'),
@@ -228,6 +230,7 @@ class SCM(object):
         else:
             # should never happen
             raise koji.GenericError, 'Invalid SCM URL: %s' % url
+        self.run_plugin('preSCMCheckout')
 
     def _parse_url(self):
         """
@@ -458,7 +461,17 @@ class SCM(object):
                 rel_path = '../' * len(path_comps.split('/'))
                 os.symlink(rel_path + 'common', '%s/../common' % sourcedir)
 
+        self.run_plugin('postSCMCheckout', {"sourcedir": sourcedir})
         return sourcedir
+
+    def run_plugin(self, plugin, extra_keys=None):
+        taskinfo = self.context
+        if taskinfo:
+            keys = ["url", "scheme", "user", "host", "path", "query", "revision", "scmtype"]
+            scminfo = dict([(k, vars(self)[k]) for k in keys if vars(self).has_key(k)])
+            if extra_keys:
+                scminfo.update(extra_keys)
+            koji.plugin.run_callbacks(plugin, scminfo=scminfo, taskinfo=taskinfo)
 
 ## END kojikamid dup
 

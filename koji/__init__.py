@@ -66,6 +66,7 @@ import xml.sax
 import xml.sax.handler
 from xmlrpclib import loads, dumps, Fault
 import zipfile
+from weakref import WeakKeyDictionary
 
 PROFILE_MODULES = {}  # {module_name: module_instance}
 
@@ -234,6 +235,57 @@ BASEDIR = '/mnt/koji'
 PRIO_DEFAULT = 20
 
 ## BEGIN kojikamid dup
+class _Singleton(type):
+    """ A metaclass that creates a Singleton base class when called. """
+    _instances = {}
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super(_Singleton, cls).__call__(*args, **kwargs)
+	return cls._instances[cls]
+
+class Singleton(_Singleton('SingletonMeta', (object,), {})): pass
+
+
+class KojiContextDict(Singleton):
+    """
+    Dictionary that will automatically remove the key
+    if the key's reference count is zero
+    """
+    dict = WeakKeyDictionary()
+    def has_key(self, instance):
+        return self.dict.__contains__(instance)
+
+    def get(self, instance):
+        if instance is None: return None
+        for obj in self.dict.keys():
+            if self.dict.get(obj) is None:
+                try:
+                    self.__set__(obj, obj.contextData())
+                except AttributeError:
+                    pass
+        ret = [objinfo for objinfo in self.dict.values() if objinfo]
+        try:
+            return instance.contextData(ret)
+        except AttributeError:
+            return ret
+
+    def set(self, instance, val=None):
+        if instance is None: return True
+        self.dict.__setitem__(instance, val)
+
+    def __get__(self, instance, owner):
+	return self.get(instance)
+
+    def __set__(self, instance, data=None):
+        self.set(instance, data)
+
+
+class KojiContext(type):
+    """Metaclass to have main koji classes to share a context"""
+    def __new__(cls, *args, **kwargs):
+        inst = super(KojiContext, cls).__new__(cls, *args, **kwargs)
+        inst.context = KojiContextDict()
+        return inst
 
 #Exceptions
 class GenericError(Exception):
