@@ -32,6 +32,9 @@ class RunRootTask(tasks.BaseTaskHandler):
 
     _taskWeight = 2.0
 
+    requestKeys = ["root", "arch", "command", "keep", "packages", "mounts",
+                   "repo_id", "skip_setarch", "weight", "upload_logs"]
+
     def __init__(self, *args, **kwargs):
         self._read_config()
         return super(RunRootTask, self).__init__(*args, **kwargs)

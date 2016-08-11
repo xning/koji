@@ -366,6 +366,35 @@ class BaseTaskHandler(object):
             repo_info = self.wait(task_id)[task_id]
         return repo_info
 
+    @classmethod
+    def request_keys(cls, method_name='handler', filter=None):
+        try:
+            keys = cls.requestKeys
+        except AttributeError:
+            raise koji.GenericError, "class %s does not have request keys" % cls
+        else:
+            return keys
+
+    def parsed_request(self, request=None, keys=None):
+        if request is None:
+            request = self.session.getTaskRequest(self.id)
+        if keys is None:
+            keys = self.request_keys()
+
+        return zip(keys, request)
+
+    def contextData(self):
+        taskinfo = self.session.getTaskInfo(self.id, request=True)
+        request = self.parsed_request(taskinfo['request'])
+        return taskinfo.update(request)
+
+    def run_plugin(self, plugin, scminfo=None, extra_keys=None):
+        taskinfo = self.contextData()
+        if extra_keys:
+            scminfo.update(extra_keys)
+
+        koji.plugin.run_callbacks(plugin, taskinfo=taskinfo, scminfo=scminfo)
+
 
 class FakeTask(BaseTaskHandler):
     Methods = ['someMethod']
@@ -433,6 +462,7 @@ class DefaultTask(BaseTaskHandler):
 class ShutdownTask(BaseTaskHandler):
     Methods = ['shutdown']
     _taskWeight = 0.0
+    requestKeys = []
     Foreground = True
     def handler(self):
         #note: this is a foreground task
@@ -445,6 +475,7 @@ class RestartTask(BaseTaskHandler):
     Methods = ['restart']
     _taskWeight = 0.1
     Foreground = True
+    requestKeys = ["host"]
     def handler(self, host):
         #note: this is a foreground task
         if host['id'] != self.session.host.getID():
@@ -459,6 +490,7 @@ class RestartVerifyTask(BaseTaskHandler):
     Methods = ['restartVerify']
     _taskWeight = 0.1
     Foreground = True
+    requestKeys = ["task_id", "host"]
     def handler(self, task_id, host):
         #note: this is a foreground task
         tinfo = self.session.getTaskInfo(task_id)
@@ -477,6 +509,7 @@ class RestartHostsTask(BaseTaskHandler):
 
     Methods = ['restartHosts']
     _taskWeight = 0.1
+    requestKeys = []
     def handler(self):
         hosts = self.session.listHosts(enabled=True)
         if not hosts:
@@ -510,6 +543,7 @@ class DependantTask(BaseTaskHandler):
     Methods = ['dependantTask']
     #mostly just waiting on other tasks
     _taskWeight = 0.2
+    requestKeys = ["wait_list", "task_list"]
 
     def handler(self, wait_list, task_list):
         for task in wait_list:
