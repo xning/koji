@@ -447,11 +447,13 @@ _TASKS = ['build',
           'createImage',
           'runroot',
           'livemedia',
-          'createLiveMedia']
+          'createLiveMedia',
+          'buildContainer',
+          'createContainer',]
 # Tasks that can exist without a parent
-_TOPLEVEL_TASKS = ['build', 'buildNotification', 'chainbuild', 'maven', 'chainmaven', 'wrapperRPM', 'winbuild', 'newRepo', 'tagBuild', 'tagNotification', 'waitrepo', 'livecd', 'appliance', 'image', 'livemedia']
+_TOPLEVEL_TASKS = ['build', 'buildNotification', 'chainbuild', 'maven', 'chainmaven', 'wrapperRPM', 'winbuild', 'newRepo', 'tagBuild', 'tagNotification', 'waitrepo', 'livecd', 'appliance', 'image', 'livemedia', 'buildContainer',]
 # Tasks that can have children
-_PARENT_TASKS = ['build', 'chainbuild', 'maven', 'chainmaven', 'winbuild', 'newRepo', 'wrapperRPM', 'livecd', 'appliance', 'image', 'livemedia']
+_PARENT_TASKS = ['build', 'chainbuild', 'maven', 'chainmaven', 'winbuild', 'newRepo', 'wrapperRPM', 'livecd', 'appliance', 'image', 'livemedia', 'buildContainer',]
 
 def tasks(environ, owner=None, state='active', view='tree', method='all', hostID=None, channelID=None, start=None, order='-id'):
     values = _initValues(environ, 'Tasks', 'tasks')
