@@ -1144,6 +1144,11 @@ def buildinfo(environ, buildID):
         values['description'] = koji.fixEncoding(headers.get('description'))
         values['changelog'] = server.getChangelogEntries(build['id'])
 
+    if build.has_key("extra"):
+        build_extra = build["extra"]
+        if build_extra.has_key("container_koji_task_id") and build["task_id"] is None:
+            build["task_id"] = int(build_extra['container_koji_task_id'])
+
     noarch_log_dest = 'noarch'
     if build['task_id']:
         task = server.getTaskInfo(build['task_id'], request=True)
