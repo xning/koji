@@ -603,10 +603,23 @@ def readGlobalInheritance(event=None):
 def readInheritanceData(tag_id,event=None):
     c=context.cnx.cursor()
     fields = ('parent_id','name','priority','maxdepth','intransitive','noconfig','pkg_filter')
-    q="""SELECT %s FROM tag_inheritance JOIN tag ON parent_id = id
-    WHERE %s AND tag_id = %%(tag_id)i
-    ORDER BY priority
-    """ % (",".join(fields), eventCondition(event))
+    fields_for_recursive_query = [field != 'name' and 'tag_inheritance.%s' % field or 'tag.%s' % field for field in fields]
+    q = '''
+    WITH RECURSIVE chosen AS (
+    SELECT %s
+    FROM tag_inheritance JOIN tag ON tag_inheritance.parent_id = tag.id
+    WHERE %s AND tag_inheritance.tag_id = %%(tag_id)i
+
+    UNION
+
+    SELECT %s
+    FROM tag_inheritance JOIN chosen ON tag_inheritance.tag_id = chosen.parent_id
+    JOIN tag ON tag_inheritance.tag_id = tag.id
+    WHERE %s
+    ) SELECT * FROM chosen ORDER BY chosen.priority
+    ''' % (",".join(fields_for_recursive_query), eventCondition(event),
+               ",".join(fields_for_recursive_query), eventCondition(event))
+
     c.execute(q,locals())
     #convert list of lists into a list of dictionaries
     data = [ dict(zip(fields,x)) for x in c.fetchall() ]
@@ -618,10 +631,23 @@ def readInheritanceData(tag_id,event=None):
 def readDescendantsData(tag_id,event=None):
     c=context.cnx.cursor()
     fields = ('tag_id','parent_id','name','priority','maxdepth','intransitive','noconfig','pkg_filter')
-    q="""SELECT %s FROM tag_inheritance JOIN tag ON tag_id = id
-    WHERE %s AND parent_id = %%(tag_id)i
-    ORDER BY priority
-    """ % (",".join(fields), eventCondition(event))
+    fields_for_recursive_query = [field != 'name' and 'tag_inheritance.%s' % field or 'tag.%s' % field for field in fields]
+    q = '''
+    WITH RECURSIVE chosen AS (
+    SELECT %s
+    FROM tag_inheritance JOIN tag ON tag_inheritance.tag_id = tag.id
+    WHERE %s AND tag_inheritance.parent_id = %%(tag_id)i
+
+    UNION
+
+    SELECT %s
+    FROM tag_inheritance JOIN chosen ON tag_inheritance.parent_id = chosen.tag_id
+    JOIN tag ON tag_inheritance.tag_id = tag.id
+    WHERE %s
+    ) SELECT * FROM chosen ORDER BY chosen.priority
+    ''' % (",".join(fields_for_recursive_query), eventCondition(event),
+               ",".join(fields_for_recursive_query), eventCondition(event))
+
     c.execute(q,locals())
     #convert list of lists into a list of dictionaries
     data = [ dict(zip(fields,x)) for x in c.fetchall() ]
