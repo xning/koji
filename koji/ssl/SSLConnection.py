@@ -5,7 +5,7 @@
 # Author: Mihai Ibanescu <misa@redhat.com>
 # Modifications by Dan Williams <dcbw@redhat.com>
 
-
+import errno
 from OpenSSL import SSL, crypto
 import os, string, time, socket, select
 
@@ -50,7 +50,13 @@ class SSLConnection:
         and Connection.shutdown() doesn't take
         an argument. So we just discard the argument.
         """
-        self.__dict__["conn"].shutdown()
+        try:
+            self.__dict__["conn"].shutdown()
+        except SSL.SysCallError, e:
+            if e.args[0] == errno.EPIPE:
+                pass
+            else:
+                raise SSL.SysCallError(str(e))
 
     def accept(self):
         """
