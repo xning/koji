@@ -1148,7 +1148,7 @@ def buildinfo(environ, buildID):
         build_extra = build["extra"]
         if build_extra.has_key("container_koji_task_id") and build["task_id"] is None:
             subtask_id = int(build_extra['container_koji_task_id'])
-            subtask_info = server.getTaskInfo(subtask_di)
+            subtask_info = server.getTaskInfo(subtask_id)
             if 'parent' in subtask_info and subtask_info['parent'] is not None:
                 build["task_id"] = subtask_info['parent']
 
