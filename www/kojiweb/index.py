@@ -448,8 +448,7 @@ _TASKS = ['build',
           'runroot',
           'livemedia',
           'createLiveMedia',
-          'buildContainer',
-          'createContainer',]
+          'buildContainer',]
 # Tasks that can exist without a parent
 _TOPLEVEL_TASKS = ['build', 'buildNotification', 'chainbuild', 'maven', 'chainmaven', 'wrapperRPM', 'winbuild', 'newRepo', 'tagBuild', 'tagNotification', 'waitrepo', 'livecd', 'appliance', 'image', 'livemedia', 'buildContainer',]
 # Tasks that can have children
