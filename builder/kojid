@@ -173,6 +173,8 @@ class BuildRoot(object):
         self.repo_info = self.session.repoInfo(self.repoid, strict=True)
         self.event_id = self.repo_info['create_event']
         self.br_arch = data['arch']
+        if data['label'] and data['label'] == 'noarch':
+            self.br_arch = 'noarch'
         self.name = "%(tag_name)s-%(id)s-%(repoid)s" % vars(self)
         self.config = self.session.getBuildConfig(self.tag_id, event=self.event_id)
 
@@ -970,27 +972,26 @@ class BuildTask(BaseTaskHandler):
         exclusivearch = h[rpm.RPMTAG_EXCLUSIVEARCH]
         excludearch = h[rpm.RPMTAG_EXCLUDEARCH]
 
-        if (arch in buildarchs and len(buildarchs) == 1 and
-                (exclusivearch or excludearch)):
-            self.logger.debug('find semi-noarch package')
-            buildconfig = self.session.getBuildConfig(build_tag, event=self.event_id)
-            arches = buildconfig['arches']
-            tag_archlist = [koji.canonArch(a) for a in arches.split()]
-            if extra:
-              arches = "%s %s" % (arches,extra)
 
-            if exclusivearch:
-                archlist = [a for a in exclusivearch if a not in excludearch]
-            else:
-                archlist = [a for a in arches.split() if a not in excludearch]
-            archlist = [a for a in archlist if koji.canonArch(a) in tag_archlist]
-            if not archlist:
-              raise koji.BuildError, "No matching arches were found to build this semi-noarch package"
-            else:
-              self.logger.debug("find architectures to build this semi-noarch: %s" % ', '.join(archlist))
-            return random.choice(archlist)
+        self.logger.debug('find noarch package')
+        buildconfig = self.session.getBuildConfig(build_tag, event=self.event_id)
+        arches = buildconfig['arches']
+        tag_archlist = [koji.canonArch(a) for a in arches.split()]
+        if extra:
+          arches = "%s %s" % (arches,extra)
+
+        exclusivearch = [a for a in exclusivearch if a != 'noarch']
+        if exclusivearch:
+            archlist = [a for a in exclusivearch if a not in excludearch]
         else:
-            return koji.canonArch(arch)
+            archlist = [a for a in arches.split() if a not in excludearch]
+        archlist = [a for a in archlist if koji.canonArch(a) in tag_archlist]
+        if not archlist:
+          raise koji.BuildError, "No matching arches were found to build this noarch package"
+        else:
+          self.logger.debug("find architectures to build this noarch: %s" % ', '.join(archlist))
+        return random.choice(archlist)
+
 
     def runBuilds(self, srpm, build_tag, archlist, repo_id, extra=None):
         self.logger.debug("Spawning jobs for arches: %r" % (archlist))
@@ -1150,7 +1151,12 @@ class BuildArchTask(BaseBuildTask):
         rootopts = {
             'repo_id': repo_id
             }
-        br_arch = self.find_arch(arch, self.session.host.getHost(), self.session.getBuildConfig(root, event=event_id))
+
+        target_arch = arch
+        task_info = self.session.getTaskInfo(self.id)
+        if task_info['label'] and task_info['label'] == 'noarch':
+            target_arch = 'noarch'
+        br_arch = self.find_arch(target_arch, self.session.host.getHost(), self.session.getBuildConfig(root, event=event_id))
         broot = BuildRoot(self.session, self.options, root, br_arch, self.id, **rootopts)
         broot.workdir = self.workdir
 
