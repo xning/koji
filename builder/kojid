@@ -970,11 +970,8 @@ class BuildTask(BaseTaskHandler):
         exclusivearch = h[rpm.RPMTAG_EXCLUSIVEARCH]
         excludearch = h[rpm.RPMTAG_EXCLUDEARCH]
 
-        if arch in buildarchs and \
-          len(buildarchs) == 1 and \
-          not exclusivearch and \
-          excludearch and \
-          arch not in excludearch:
+        if (arch in buildarchs and len(buildarchs) == 1 and
+                (exclusivearch or excludearch)):
             self.logger.debug('find semi-noarch package')
             buildconfig = self.session.getBuildConfig(build_tag, event=self.event_id)
             arches = buildconfig['arches']
@@ -982,7 +979,10 @@ class BuildTask(BaseTaskHandler):
             if extra:
               arches = "%s %s" % (arches,extra)
 
-            archlist = [a for a in arches.split() if a not in excludearch]
+            if exclusivearch:
+                archlist = [a for a in exclusivearch if a not in excludearch]
+            else:
+                archlist = [a for a in arches.split() if a not in excludearch]
             archlist = [a for a in archlist if koji.canonArch(a) in tag_archlist]
             if not archlist:
               raise koji.BuildError, "No matching arches were found to build this semi-noarch package"
