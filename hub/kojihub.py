@@ -7127,6 +7127,35 @@ def build_notification(task_id, build_id):
     if len(recipients) > 0:
         make_task('buildNotification', [recipients, build, target, web_url])
 
+def task_notification(task_id):
+    if context.opts.get('DisableNotifications'):
+        return
+
+    web_url = context.opts.get('KojiWebURL', 'http://localhost/koji')
+    email_domain = context.opts['EmailDomain']
+
+    try:
+        taskinfo = self.session.getTaskInfo(task_id)
+    except:
+        logger.info('unavaliable task %i' % task_id)
+        return
+    if not taskinfo:
+        logger.info('unavaliable task %i' % task_id)
+        return
+    if 'owner' not in taskinfo:
+        logger.info('no owner found for task %i' % task_id)
+        return
+
+    owner = None
+    try:
+        owner = self.session.getUser(taskinfo['owner'])['name']
+    except:
+        logger.info('no name found for user id: %i' % owner)
+        return
+
+    recipients = ['%s@%s' % (owner, email_domain)]
+    make_task('taskNotification', [recipients, task_id, web_url])
+
 def get_build_notifications(user_id):
     fields = ('id', 'user_id', 'package_id', 'tag_id', 'success_only', 'email')
     query = """SELECT %s
@@ -8810,6 +8839,8 @@ class RootExports(object):
     getExternalRepo = staticmethod(get_external_repo)
     editExternalRepo = staticmethod(edit_external_repo)
     deleteExternalRepo = staticmethod(delete_external_repo)
+
+    taskNotification = staticmethod(task_notification)
 
     def addExternalRepoToTag(self, tag_info, repo_info, priority):
         """Add an external repo to a tag"""

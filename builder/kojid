@@ -1222,6 +1222,14 @@ class MavenTask(MultiPlatformTask):
                                                        parent=self.id,
                                                        arch='noarch')
         maven_results = self.wait(self.build_task_id)[self.build_task_id]
+
+        # failed subtask maybe just returns a string, hence insert some stop logic
+        if not isinstance(maven_results, dict):
+            if not self.opts.get('scratch'):
+                self.session.taskNotification(self.id)
+            # TaskManager need an exception to fail the task, hence we raise one
+            raise koji.BuildError, 'subtask %i failed' % self.build_task_id
+
         maven_results['task_id'] = self.build_task_id
 
         build_info = None
@@ -4647,6 +4655,133 @@ Build Info: %(weburl)s/buildinfo?buildID=%(build_id)i\r
         l = m.keys()
         l.sort()
         return l
+
+
+class TaskNotificationTask(BaseTaskHandler):
+    Methods = ['taskNotification']
+
+    _taskWeight = 0.1
+
+    subject_templ = """%(owner)s's task %(task_id)i: %(state)s"""
+    message_templ = \
+"""From: %(from_addr)s\r
+Subject: %(subject)s\r
+To: %(to_addrs)s\r
+X-Koji-Task: %(task_id)s\r
+X-Koji-Task-Owner: %(owner)s\r
+X-Koji-Task-Status: %(state)i\r
+\r
+Method: %(method)s\r
+Status: %(state)s\r
+Submited by: %(owner)s\r
+ID: %(task_id)i\r
+Arch: %(arch)\r
+BuildArch: %(buildarch)\r
+Result: %(result)s\r
+Request: %(request_str)s\r
+Created: %(creation_time)s\r
+Started: %(start_time)s\r
+Finished: %(completion_time)s\r
+Channel: %(channel)s\r
+Host: %(host)s\r
+Task Info: %(weburl)s/taskinfo?taskID=%(task_id)i\r
+"""
+
+    def _getData(self, task_id):
+        data = {
+            'task_id': task_id,
+            'method': 'Unknown',
+            'arch': 'Unknown',
+            'build_arch': 'Unknown',
+            'state': 'Unknown',
+            'result': 'Unknown',
+            'requrest': {},
+            'owner': 'Unknown',
+            'channel': 'Unknown',
+            'host': 'Unknown',
+            'create_time': 'Unknown',
+            'start_time': 'Unknown',
+            'completion_time': 'Unknown',}
+
+        try:
+            taskinfo = self.session.getTaskInfo(task_id)
+        except:
+            return data
+
+        if not taskinfo:
+            return data
+
+        result = None
+        try:
+            result = self.session.getTaskResult(task_id)
+        except:
+            excClass, result = sys.exc_info()[:2]
+            if hasattr(result, 'faultString'):
+                result = result.faultString
+            else:
+                result = '%s: %s' % (excClass.__name__, result)
+            result = result.strip()
+            # clear the exception, since we're just using
+            # it for display purposes
+            sys.exc_clear()
+        if not result:
+            result = 'Unknown'
+
+        owner = None
+        try:
+            owner = self.session.getUser(taskinfo['owner'])['name']
+        except:
+            owner = 'Unknown'
+
+        channel = None
+        try:
+            channel = self.session.getChannel(taskinfo['channel_id'])['name']
+        except:
+            channel = 'Unknown'
+
+        host = None
+        try:
+            host = self.session.getHost(taskinfo['host_id'])['name']
+        except:
+            host = 'Unknown'
+
+        data = {}
+        data['task_id'] = taskinfo['id']
+        data['method'] = taskinfo['method']
+        data['arch'] = taskinfo['arch']
+        data['build_arch'] = taskinfo['label']
+        data['state'] = koji.TASK_STATES[taskinfo['state']].lower()
+        data['request'] = self.session.getTaskRequest(task_id)
+        data['result'] = result
+        data['owner'] = owner
+        data['channel'] = channel
+        data['host'] = host
+        data['create_time'] = taskinfo['create_time']
+        data['start_time'] = taskinfo['start_time']
+        data['completion_time'] = taskinfo['completion_time']
+
+        return data
+
+    def handler(self, recipients, task_id, weburl):
+        if len(recipients) == 0:
+            self.logger.debug('task %i: no recipients, not sending notifications', self.id)
+            return
+
+        data = self._getData(task_id)
+        data['request_str'] = str(data['request'])
+        data['weburl'] = weburl
+
+        from_addr = self.options.from_addr
+        to_addrs = ', '.join(recipients)
+        subject = self.subject_templ % data
+        message = self.message_templ % data
+        message = koji.fixEncoding(message)
+
+        server = smtplib.SMTP(self.options.smtphost)
+        server.sendmail(from_addr, recipients, message)
+        server.quit()
+
+        return 'sent notification of task %i to: %s' % (data['task_id'], to_addrs)
 
 
 class NewRepoTask(BaseTaskHandler):
