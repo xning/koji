@@ -7135,8 +7135,8 @@ def task_notification(task_id):
     email_domain = context.opts['EmailDomain']
 
     try:
-        taskinfo = self.session.getTaskInfo(task_id)
-    except:
+        taskinfo = context.session.getTaskInfo(task_id)
+    except Exception:
         logger.info('unavaliable task %i' % task_id)
         return
     if not taskinfo:
@@ -7148,7 +7148,7 @@ def task_notification(task_id):
 
     owner = None
     try:
-        owner = self.session.getUser(taskinfo['owner'])['name']
+        owner = context.session.getUser(taskinfo['owner'])['name']
     except:
         logger.info('no name found for user id: %i' % owner)
         return

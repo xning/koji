@@ -109,6 +109,36 @@ class ServerRestart(Exception):
     """Raised to restart the server"""
     pass
 
+# when waiting for subtask/subtasks a subtask maybe raises an exception
+# or returns a result that is not a dict.
+def _safe_wait_method(method):
+    def wrapper(*args, **kwargs):
+        this = args[0]
+        if 'subtasks' in kwargs:
+            tasks = kwargs['subtasks']
+        else:
+            tasks = args[1]
+        if isinstance(tasks, list) and len(tasks) > 1:
+            error_msg = 'task %i failed for one of its subtasks failed' % this.id
+        else:
+            error_msg = 'task %i failed for its subtask failed' % this.id
+        e = koji.BuildError(error_msg)
+
+        enable_stop_logic = False
+        try:
+            results = method(*args, **kwargs)
+        except Exception, e:
+            enable_stop_logic = True
+
+        if enable_stop_logic or (not isinstance(results, dict)):
+            if not this.opts.get('scratch'):
+                this.logger.info('Arrage to send a notification to the owner of the task %i' % this.id)
+                this.session.taskNotification(this.id)
+            raise e
+
+        return results
+    return wrapper
+
 class BaseTaskHandler(object):
     """The base class for task handlers
 
@@ -187,6 +217,7 @@ class BaseTaskHandler(object):
         safe_rmtree(self.workdir, unmount=False, strict=True)
         #os.spawnvp(os.P_WAIT, 'rm', ['rm', '-rf', self.workdir])
 
+    @_safe_wait_method
     def wait(self, subtasks=None, all=False, failany=False):
         """Wait on subtasks
 

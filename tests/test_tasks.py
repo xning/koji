@@ -1,5 +1,6 @@
+import imp
 import random
-from unittest import TestCase
+from unittest import TestCase, skipIf
 from mock import patch, Mock, call
 from tempfile import gettempdir
 from shutil import rmtree
@@ -9,6 +10,16 @@ from io import StringIO
 import koji
 from koji.tasks import scan_mounts, umount_all, safe_rmtree, BaseTaskHandler, FakeTask, SleepTask, ForkTask
 from koji import BuildError, GenericError
+
+kojid_exe_path = '/usr/sbin/kojid'
+try:
+    with file(kojid_exe_path, 'U') as fo:
+        kojid = imp.load_module('kojid', fo, fo.name, ('.py', 'U', 1))
+except IOError:
+    kojid = None
+
+if kojid is not None:
+    from kojid import TaskNotificationTask
 
 def get_fake_mounts_file():
     """ Returns contents of /prc/mounts in a file-like object
@@ -352,8 +363,28 @@ class TasksTestCase(TestCase):
             obj.wait([1551234, 1591234], all=True, failany=True)
             raise Exception('A GeneralError was not raised.')
         except GenericError as e:
-            self.assertEquals(e.message, 'Uh oh, we\'ve got a problem here!')
-            obj.session.host.taskSetWait.assert_called_once_with(12345678, [1551234, 1591234])
+            error_msg = e.message
+        self.assertEquals(error_msg, 'Uh oh, we\'ve got a problem here!')
+        obj.session.host.taskSetWait.assert_called_once_with(12345678, [1551234, 1591234])
+
+    def test_BaseTaskHandler_wait_decorator(self):
+        """ Tests that the decorator could catch the exception that the wait method raised and do some aftertreatment.
+        """
+        temp_path = get_tmp_dir_path('TestTask')
+        obj = TestTask(12345678, 'some_method', ['random_arg'], None, None, temp_path)
+        makedirs(temp_path)
+        obj.session = Mock()
+        obj.session.host.taskSetWait.return_value = None
+        obj.session.host.taskWait.side_effect = [[[1551234], [1591234]], [[1551234, 1591234], []]]
+        obj.session.getTaskResult.side_effect = GenericError('Uh oh, we\'ve got a problem here!')
+        obj.session.taskNotification.side_effect = BuildError('Ah, the decorator raise an exception')
+        try:
+            obj.wait([1551234, 1591234], all=True, failany=True)
+            raise Exception('A GeneralError was not raised.')
+        except GenericError as e:
+            error_msg = e.message
+        self.assertEquals(error_msg, 'Ah, the decorator raise an exception')
+        obj.session.host.taskSetWait.assert_called_once_with(12345678, [1551234, 1591234])
 
     def test_BaseTaskHandler_getUploadDir(self):
         """ Tests that the getUploadDir function returns the appropriate path based on the id of the handler.
@@ -670,3 +701,52 @@ class TasksTestCase(TestCase):
         obj = ForkTask(123, 'fork', [1, 20], None, None, (get_tmp_dir_path('ForkTask')))
         obj.run()
         mock_spawnvp.assert_called_once_with(1, 'sleep', ['sleep', '20'])
+
+    @skipIf(kojid is None, 'kojid is unavalable')
+    def test_TaskNotificationTask(self):
+        """Tests that the TaskNotificationTask handler works.
+        """
+        options = Mock(from_addr='koji@example.com', smtphost='mx.example.com')
+
+        temp_path = get_tmp_dir_path('TestTask')
+        obj = TaskNotificationTask(1025, 'taskNotification',
+                                   [['pkger@example.com'], 1024, 'https://koji.example.com'],
+                                   None, options, temp_path)
+        makedirs(temp_path)
+
+        obj.session = Mock()
+        obj.session.getTaskInfo.return_value = {
+            'id': 1024,
+            'method': 'taskNotification',
+            'arch': 'noarch',
+            'label': 'x86_64',
+            'state': 5,
+            'result': 'Unknown',
+            'requrest': {},
+            'owner': 1,
+            'channel_id': 1,
+            'host_id': 1,
+            'create_time': '20161221',
+            'start_time': '20161221',
+            'completion_time': '20161221',}
+        obj.session.getTaskResult.side_effect = BuildError('So bad')
+        obj.session.getUser.return_value = {'name': 'pkger'}
+        obj.session.getChannel.return_value = {'name': 'default'}
+        obj.session.getHost.return_value = {'name': 'builder.example.com'}
+        obj.session.getTaskRequest.return_value = 'fake request'
+
+        data = obj._getData(1024)
+        self.assertEquals(data['channel'],'default')
+        self.assertEquals(data['host'],'builder.example.com')
+
+        error_msg = None
+        from socket import gaierror
+        try:
+            result = obj.handler(['pkger@example.com'], 1024,'https://koji.example.com')
+        except gaierror, e:
+            error_msg = 'Name or service not known'
+
+        if error_msg is not None:
+            self.assertEquals(error_msg, 'Name or service not known')
+        else:
+            self.assertEquals(result, 'sent notification of task 1024 to: pkger@example.com')

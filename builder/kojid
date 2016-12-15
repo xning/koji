@@ -1222,14 +1222,6 @@ class MavenTask(MultiPlatformTask):
                                                        parent=self.id,
                                                        arch='noarch')
         maven_results = self.wait(self.build_task_id)[self.build_task_id]
-
-        # failed subtask maybe just returns a string, hence insert some stop logic
-        if not isinstance(maven_results, dict):
-            if not self.opts.get('scratch'):
-                self.session.taskNotification(self.id)
-            # TaskManager need an exception to fail the task, hence we raise one
-            raise koji.BuildError, 'subtask %i failed' % self.build_task_id
-
         maven_results['task_id'] = self.build_task_id
 
         build_info = None
@@ -4669,17 +4661,17 @@ Subject: %(subject)s\r
 To: %(to_addrs)s\r
 X-Koji-Task: %(task_id)s\r
 X-Koji-Task-Owner: %(owner)s\r
-X-Koji-Task-Status: %(state)i\r
+X-Koji-Task-Status: %(state)s\r
 \r
 Method: %(method)s\r
 Status: %(state)s\r
 Submited by: %(owner)s\r
 ID: %(task_id)i\r
-Arch: %(arch)\r
-BuildArch: %(buildarch)\r
+Arch: %(arch)s\r
+BuildArch: %(build_arch)s\r
 Result: %(result)s\r
 Request: %(request_str)s\r
-Created: %(creation_time)s\r
+Created: %(create_time)s\r
 Started: %(start_time)s\r
 Finished: %(completion_time)s\r
 Channel: %(channel)s\r
@@ -4766,21 +4758,20 @@ Task Info: %(weburl)s/taskinfo?taskID=%(task_id)i\r
         if len(recipients) == 0:
             self.logger.debug('task %i: no recipients, not sending notifications', self.id)
             return
-
         data = self._getData(task_id)
         data['request_str'] = str(data['request'])
         data['weburl'] = weburl
-
         from_addr = self.options.from_addr
+        data['from_addr'] = from_addr
         to_addrs = ', '.join(recipients)
+        data['to_addrs'] = to_addrs
         subject = self.subject_templ % data
+        data['subject'] = subject
         message = self.message_templ % data
         message = koji.fixEncoding(message)
-
         server = smtplib.SMTP(self.options.smtphost)
         server.sendmail(from_addr, recipients, message)
         server.quit()
-
         return 'sent notification of task %i to: %s' % (data['task_id'], to_addrs)
 
 
