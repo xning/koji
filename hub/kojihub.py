@@ -7146,14 +7146,13 @@ def task_notification(task_id):
         logger.info('no owner found for task %i' % task_id)
         return
 
-    owner = None
     try:
-        owner = context.session.getUser(taskinfo['owner'])['name']
-    except:
-        logger.info('no name found for user id: %i' % owner)
+        pkger = context.session.getUser(taskinfo['owner'])['name']
+    except Exception:
+        logger.info('no name found for user whose id is: %i' % taskinfo['owner'])
         return
 
-    recipients = ['%s@%s' % (owner, email_domain)]
+    recipients = ['%s@%s' % (pkger, email_domain)]
     make_task('taskNotification', [recipients, task_id, web_url])
 
 def get_build_notifications(user_id):
