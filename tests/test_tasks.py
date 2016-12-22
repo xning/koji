@@ -21,6 +21,17 @@ except IOError:
 if kojid is not None:
     from kojid import TaskNotificationTask
 
+kojihub_path = '/usr/share/koji-hub'
+if path.exists('%s/kojihub.py' % kojihub_path):
+    kojihub = True
+else:
+    kojihub = None
+
+if kojihub:
+    import sys
+    sys.path.append(kojihub_path)
+    from kojihub import task_notification
+
 def get_fake_mounts_file():
     """ Returns contents of /prc/mounts in a file-like object
     """
@@ -750,3 +761,48 @@ class TasksTestCase(TestCase):
             self.assertEquals(error_msg, 'Name or service not known')
         else:
             self.assertEquals(result, 'sent notification of task 1024 to: pkger@example.com')
+
+    @skipIf(kojihub is None, 'kojihub module is unavailable')
+    def test_task_notification_func(self):
+        """Tests that the task_notification function works.
+        """
+        def make_task(*args, **kwargs):
+            return 'do a new taskNotification task'
+        task_id = 1024
+        from koji.context import context
+        context.__setattr__('policy', {})
+        context.__setattr__('opts', {})
+        context.opts['DisableNotifications'] = False
+        context.opts['KojiWebURL'] = 'https://koji.exmaple.com'
+        context.opts['EmailDomain'] = 'example.com'
+        context.__setattr__('session', Mock())
+        context.session.getTaskInfo.return_value = {
+            'id': task_id,
+            'method': 'build',
+            'arch': 'noarch',
+            'label': 'x86_64',
+            'state': 5,
+            'result': 'Unknown',
+            'requrest': {},
+            'owner': 1,
+            'channel_id': 1,
+            'host_id': 1,
+            'create_time': '20161221',
+            'start_time': '20161221',
+            'completion_time': '20161221',}
+        context.session.getUser.return_value = {'name': 'pkger'}
+        self.assertEquals(context.opts.get('DisableNotifications'), False)
+        self.assertEquals(context.opts.get('KojiWebURL'), 'https://koji.exmaple.com')
+        self.assertEquals(context.opts.get('EmailDomain', ''), 'example.com')
+        # we do not perpare anything for the policy. Hence, following line will
+        # raise the AttributeError exception
+        #
+        # result = ruleset.apply(policy_data)
+        #
+        # Hence we know that the make_task function be called
+        try:
+            task_notification(task_id)
+        except AttributeError, e:
+            error_msg = e.message
+
+        self.assertEquals(error_msg, "'NoneType' object has no attribute 'apply'")
