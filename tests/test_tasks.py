@@ -11,26 +11,11 @@ import koji
 from koji.tasks import scan_mounts, umount_all, safe_rmtree, BaseTaskHandler, FakeTask, SleepTask, ForkTask
 from koji import BuildError, GenericError
 
-kojid_exe_path = '/usr/sbin/kojid'
-try:
-    with file(kojid_exe_path, 'U') as fo:
-        kojid = imp.load_module('kojid', fo, fo.name, ('.py', 'U', 1))
-except IOError:
-    kojid = None
+with file('builder/kojid', 'U') as fo:
+    kojid = imp.load_module('kojid', fo, fo.name, ('.py', 'U', 1))
 
-if kojid is not None:
-    from kojid import TaskNotificationTask
-
-kojihub_path = '/usr/share/koji-hub'
-if path.exists('%s/kojihub.py' % kojihub_path):
-    kojihub = True
-else:
-    kojihub = None
-
-if kojihub:
-    import sys
-    sys.path.append(kojihub_path)
-    from kojihub import task_notification
+from kojid import TaskNotificationTask
+from kojihub import task_notification
 
 def get_fake_mounts_file():
     """ Returns contents of /prc/mounts in a file-like object
@@ -713,7 +698,6 @@ class TasksTestCase(TestCase):
         obj.run()
         mock_spawnvp.assert_called_once_with(1, 'sleep', ['sleep', '20'])
 
-    @skipIf(kojid is None, 'kojid is unavalable')
     def test_TaskNotificationTask(self):
         """Tests that the TaskNotificationTask handler works.
         """
@@ -750,24 +734,20 @@ class TasksTestCase(TestCase):
         self.assertEquals(data['channel'],'default')
         self.assertEquals(data['host'],'builder.example.com')
 
-        error_msg = None
         from socket import gaierror
-        try:
-            result = obj.handler(['pkger@example.com'], 1024,'https://koji.example.com')
-        except gaierror, e:
-            error_msg = 'Name or service not known'
+        with patch('smtplib.SMTP') as smtp:
+            smtp.return_value.sendmail.side_effect = gaierror('some msg')
+            with self.assertRaises(gaierror) as cm:
+                obj.handler(['pkger@example.com'], 1024, 'https://koji.example.com')
+            self.assertEqual(cm.exception.args[0], 'some msg')
+            smtp.reset_mock()
+            smtp.return_value.sendmail.side_effect = None
+            result = obj.handler(['pkger@example.com'], 1024, 'https://koji.example.com')
+            self.assertEqual(result, 'sent notification of task 1024 to: pkger@example.com')
 
-        if error_msg is not None:
-            self.assertEquals(error_msg, 'Name or service not known')
-        else:
-            self.assertEquals(result, 'sent notification of task 1024 to: pkger@example.com')
-
-    @skipIf(kojihub is None, 'kojihub module is unavailable')
     def test_task_notification_func(self):
         """Tests that the task_notification function works.
         """
-        def make_task(*args, **kwargs):
-            return 'do a new taskNotification task'
         task_id = 1024
         from koji.context import context
         context.__setattr__('policy', {})
@@ -794,15 +774,7 @@ class TasksTestCase(TestCase):
         self.assertEquals(context.opts.get('DisableNotifications'), False)
         self.assertEquals(context.opts.get('KojiWebURL'), 'https://koji.exmaple.com')
         self.assertEquals(context.opts.get('EmailDomain', ''), 'example.com')
-        # we do not perpare anything for the policy. Hence, following line will
-        # raise the AttributeError exception
-        #
-        # result = ruleset.apply(policy_data)
-        #
-        # Hence we know that the make_task function be called
-        try:
-            task_notification(task_id)
-        except AttributeError, e:
-            error_msg = e.message
-
-        self.assertEquals(error_msg, "'NoneType' object has no attribute 'apply'")
+        with patch('kojihub.make_task') as mkt:
+            mkt.return_value = None
+            result = task_notification(task_id)
+            self.assertEqual(result, None)
